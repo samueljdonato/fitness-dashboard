@@ -110,6 +110,10 @@ def load_workout_data() -> Optional[pd.DataFrame]:
         # Convert to DataFrame
         df = pd.DataFrame(records)
         
+        if df.empty:
+            st.warning("No data found in the spreadsheet")
+            return pd.DataFrame()
+        
         # Basic data cleaning
         df = clean_workout_data(df)
         

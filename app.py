@@ -3,13 +3,13 @@ Fitness Dashboard - Main Application
 A Streamlit app for tracking and visualizing personal fitness data from Google Sheets
 """
 
+import streamlit as st
 import pandas as pd
 from dotenv import load_dotenv
 import os
 
 # Load environment variables
 load_dotenv()
-
 
 # Import utility functions
 from utils.data_loader import load_workout_data, test_connection
@@ -21,6 +21,17 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Load environment variables
+load_dotenv()
+
+# Import utility functions (after streamlit config)
+try:
+    from utils.data_loader import load_workout_data, test_connection
+except ImportError as e:
+    st.error(f"Error importing utilities: {e}")
+    st.info("Make sure utils/__init__.py exists and utils modules are properly structured")
+    st.stop()
 
 def main():
     """Main application function"""
@@ -132,22 +143,61 @@ def show_summary_page():
         with st.spinner("Loading workout data..."):
             df = load_workout_data()
             
-        if df is None or df.empty:
-            st.warning("No data found. Please check your Google Sheets connection.")
+        if df is None:
+            st.error("❌ Failed to load data - check your Google Sheets connection")
             return
             
-        # Display basic metrics for now
-        st.success(f"✅ Loaded {len(df)} workout records")
-        
-        # Show raw data for debugging (remove this later)
-        with st.expander("📋 Raw Data Preview (Debug)"):
-            st.dataframe(df.head(10))
+        if df.empty:
+            st.warning("📝 No data found. Please check your Google Sheets has data.")
+            return
             
-        st.info("📈 Summary visualizations will be implemented in Phase 2!")
+        # Display basic metrics
+        st.success(f"✅ Successfully loaded {len(df)} records")
+        
+        # Show column information
+        st.subheader("📋 Data Structure")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.write("**Columns found:**")
+            st.write(list(df.columns))
+            
+        with col2:
+            st.write("**Data types:**")
+            st.write(df.dtypes.to_dict())
+        
+        # Show data preview
+        st.subheader("🔍 Data Preview")
+        st.dataframe(df.head(10), use_container_width=True)
+        
+        # Basic statistics if we have numeric columns
+        numeric_cols = df.select_dtypes(include=['number']).columns
+        if len(numeric_cols) > 0:
+            st.subheader("📈 Quick Stats")
+            st.write(df[numeric_cols].describe())
+        
+        # Show unique values for key columns
+        st.subheader("🏷️ Unique Values")
+        for col in df.columns[:5]:  # Show first 5 columns
+            unique_count = df[col].nunique()
+            if unique_count < 20:  # Only show if reasonable number
+                st.write(f"**{col}**: {unique_count} unique values")
+                st.write(df[col].unique()[:10])  # Show first 10
+            else:
+                st.write(f"**{col}**: {unique_count} unique values (too many to display)")
         
     except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        st.info("💡 Make sure your Google Sheets is shared with the service account email")
+        st.error(f"❌ Error loading data: {str(e)}")
+        
+        # Additional debugging info
+        with st.expander("🔧 Debug Information"):
+            st.write("**Error details:**")
+            st.code(str(e))
+            st.write("**Environment variables:**")
+            st.write({
+                "GOOGLE_SHEET_NAME": os.getenv('GOOGLE_SHEET_NAME', 'Not set'),
+                "GOOGLE_SHEET_WORKSHEET": os.getenv('GOOGLE_SHEET_WORKSHEET', 'Not set')
+            })
 
 def show_workout_details_page():
     """Display workout detail analysis"""
