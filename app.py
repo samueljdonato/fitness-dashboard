@@ -306,43 +306,43 @@ def show_summary_page():
         if movement_frequency:
             top_movements = sorted(movement_frequency.items(), key=lambda x: x[1], reverse=True)[:10]
             
-            col1, col2 = st.columns(2)
+            # col1, col2 = st.columns(1)
             
-            with col1:
+            # with col1:
                 # Top movements bar chart
-                movements, counts = zip(*top_movements)
-                fig_movements = px.bar(
-                    x=counts,
-                    y=movements,
-                    orientation='h',
-                    title="Most Frequent Movements (Top 10)",
-                    labels={'x': 'Times Performed', 'y': 'Movement'},
-                    color=counts,
-                    color_continuous_scale='plasma'
-                )
-                fig_movements.update_layout(height=400, showlegend=False)
-                st.plotly_chart(fig_movements, use_container_width=True)
-            
-            with col2:
-                # Recent sessions table (filtered)
-                if selected_workout_filter == "All Workouts":
-                    table_title = "**Recent Sessions:**"
-                    recent_sessions_data = df_clean.nlargest(8, date_col)
-                else:
-                    table_title = f"**Recent {selected_workout_filter} Sessions:**"
-                    recent_sessions_data = filtered_df.nlargest(8, date_col)
+            movements, counts = zip(*top_movements)
+            fig_movements = px.bar(
+                x=counts,
+                y=movements,
+                orientation='h',
+                title="Most Frequent Movements (Top 10)",
+                labels={'x': 'Times Performed', 'y': 'Movement'},
+                color=counts,
+                color_continuous_scale='plasma'
+            )
+            fig_movements.update_layout(height=400, showlegend=False)
+            st.plotly_chart(fig_movements, use_container_width=True)
+        
+        #     with col2:
+        #         # Recent sessions table (filtered)
+        #         if selected_workout_filter == "All Workouts":
+        #             table_title = "**Recent Sessions:**"
+        #             recent_sessions_data = df_clean.nlargest(8, date_col)
+        #         else:
+        #             table_title = f"**Recent {selected_workout_filter} Sessions:**"
+        #             recent_sessions_data = filtered_df.nlargest(8, date_col)
                 
-                st.write(table_title)
-                recent_sessions = recent_sessions_data[[date_col, workout_col]].copy()
+        #         st.write(table_title)
+        #         recent_sessions = recent_sessions_data[[date_col, workout_col]].copy()
                 
-                # Add first movement if available
-                if movement_cols:
-                    recent_sessions['first_movement'] = recent_sessions_data[movement_cols[0]]
+        #         # Add first movement if available
+        #         if movement_cols:
+        #             recent_sessions['first_movement'] = recent_sessions_data[movement_cols[0]]
                     
-                recent_sessions[date_col] = recent_sessions[date_col].dt.strftime('%m/%d/%Y')
-                st.dataframe(recent_sessions, use_container_width=True, hide_index=True)
-        else:
-            st.info(f"No movement data found for {selected_workout_filter if selected_workout_filter != 'All Workouts' else 'any workouts'}")
+        #         recent_sessions[date_col] = recent_sessions[date_col].dt.strftime('%m/%d/%Y')
+        #         st.dataframe(recent_sessions, use_container_width=True, hide_index=True)
+        # else:
+        #     st.info(f"No movement data found for {selected_workout_filter if selected_workout_filter != 'All Workouts' else 'any workouts'}")
 
         # === PROGRESS TRACKING PREVIEW ===
         st.subheader("📈 Progress Highlights")
