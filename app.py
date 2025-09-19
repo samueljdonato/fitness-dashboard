@@ -79,12 +79,7 @@ def check_access():
     
     st.markdown("""
     ### Welcome to Your Personal Fitness Dashboard 💪
-    
-    **Privacy & Security:**
-    - Your workout data stays in **your Google Sheets**
-    - No data is stored on our servers
-    - Password protects access to your personal fitness analytics
-    
+
     **What you'll find inside:**
     - 📊 Comprehensive workout analytics
     - 📈 Progress tracking over time  
