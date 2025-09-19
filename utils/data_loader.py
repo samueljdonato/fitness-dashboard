@@ -23,27 +23,28 @@ def get_google_credentials():
             'https://www.googleapis.com/auth/drive.readonly'
         ]
         
-        # Try Streamlit secrets first (for production)
-        if hasattr(st, 'secrets') and 'GOOGLE_SHEETS_CREDENTIALS' in st.secrets:
-            try:
+        # First try local service account file (for development)
+        creds_path = "config/service_account.json"
+        
+        if os.path.exists(creds_path):
+            # Create credentials from file
+            credentials = Credentials.from_service_account_file(creds_path, scopes=scopes)
+            return gspread.authorize(credentials)
+        
+        # If no local file, try Streamlit secrets (for production)
+        try:
+            if hasattr(st, 'secrets') and 'GOOGLE_SHEETS_CREDENTIALS' in st.secrets:
                 credentials_info = dict(st.secrets['GOOGLE_SHEETS_CREDENTIALS'])
                 credentials = Credentials.from_service_account_info(credentials_info, scopes=scopes)
                 return gspread.authorize(credentials)
-            except Exception as e:
-                print(f"Failed to use Streamlit secrets: {e}")
-                # Continue to try file-based approach
+        except Exception as e:
+            print(f"Failed to use Streamlit secrets: {e}")
         
-        # Fallback to service account file (for local development)
-        creds_path = "config/service_account.json"
+        # If neither works, raise an error
+        raise FileNotFoundError("No Google credentials found. Please provide either:\n" +
+                               f"1. Local file: {creds_path}\n" +
+                               "2. Streamlit secrets: GOOGLE_SHEETS_CREDENTIALS")
         
-        if not os.path.exists(creds_path):
-            raise FileNotFoundError(f"Service account file not found: {creds_path} and no Streamlit secrets configured")
-        
-        # Create credentials from file
-        credentials = Credentials.from_service_account_file(creds_path, scopes=scopes)
-        
-        return gspread.authorize(credentials)
-    
     except Exception as e:
         st.error(f"Failed to authenticate with Google Sheets: {str(e)}")
         return None

@@ -417,66 +417,117 @@ def show_summary_page():
             recent_sessions = len(df_clean[df_clean[date_col] >= recent_cutoff])
             st.metric(selected_period, f"{recent_sessions} sessions")
 
+ # === Recent Workouts ===
+        st.subheader("Recent Workouts")
+        
+        # Get recent workouts
+        recent_workouts = df_clean.sort_values(date_col, ascending=False).head(7)
+        
+        # Show recent workouts
+        # Create a copy to avoid modifying the original dataframe
+        display_workouts = recent_workouts.copy()
+        
+        # Format the Date column to show day of week + date
+        if 'Date' in display_workouts.columns:
+            display_workouts['Date'] = display_workouts['Date'].dt.strftime('%A, %Y-%m-%d')
+        
+        # Display only first 3 columns
+        st.dataframe(display_workouts.iloc[:, :3], use_container_width=True)
+        
+        # === TIME PERIOD FILTER ===
+        st.subheader("📊 Dashboard Summary")
+        
+        # Add time period filter for all visualizations
+        time_filter_options = {
+            "All Time": None,
+            "Last Month": 30,
+            "Last Week": 7
+        }
+        
+        selected_period = st.selectbox(
+            "Select Time Period for All Charts:",
+            options=list(time_filter_options.keys()),
+            key="global_time_filter"
+        )
+        
+        # Filter data based on selected period
+        filtered_df = df_clean.copy()
+        if time_filter_options[selected_period] is not None:
+            days_back = time_filter_options[selected_period]
+            cutoff_date = filtered_df[date_col].max() - pd.Timedelta(days=days_back)
+            filtered_df = filtered_df[filtered_df[date_col] >= cutoff_date]
+
         # === WORKOUT FREQUENCY ANALYSIS ===
         st.subheader("🏋️ Workout Frequency")
+        
         col1, col2 = st.columns([2, 1])
         
         with col1:
             # Workout frequency bar chart
-            workout_counts = df_clean[workout_col].value_counts()
-            fig = px.bar(
-                x=workout_counts.values,
-                y=workout_counts.index,
-                orientation='h',
-                title="Sessions by Workout Type",
-                labels={'x': 'Number of Sessions', 'y': 'Workout Type'},
-                color=workout_counts.values,
-                color_continuous_scale='viridis'
-            )
-            fig.update_layout(height=300, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
+            workout_counts = filtered_df[workout_col].value_counts()
+            
+            if len(workout_counts) > 0:
+                fig = px.bar(
+                    x=workout_counts.values,
+                    y=workout_counts.index,
+                    orientation='h',
+                    title=f"Sessions by Workout Type ({selected_period})",
+                    labels={'x': 'Number of Sessions', 'y': 'Workout Type'},
+                    color=workout_counts.values,
+                    color_continuous_scale='viridis'
+                )
+                fig.update_layout(height=300, showlegend=False)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info(f"No workout data available for {selected_period}")
             
         with col2:
             # Workout type pie chart
-            fig_pie = px.pie(
-                values=workout_counts.values,
-                names=workout_counts.index,
-                title="Workout Distribution"
-            )
-            fig_pie.update_layout(height=300)
-            st.plotly_chart(fig_pie, use_container_width=True)
+            if len(workout_counts) > 0:
+                fig_pie = px.pie(
+                    values=workout_counts.values,
+                    names=workout_counts.index,
+                    title=f"Workout Distribution ({selected_period})"
+                )
+                fig_pie.update_layout(height=300)
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info(f"No workout data available for {selected_period}")
 
         # === TRAINING TIMELINE ===
         st.subheader("📅 Training Timeline")
         
-        # Group by date to handle multiple sessions per day
-        daily_sessions = df_clean.groupby(df_clean[date_col].dt.date).size().reset_index()
+        # Group by date to handle multiple sessions per day (using filtered data)
+        daily_sessions = filtered_df.groupby(filtered_df[date_col].dt.date).size().reset_index()
         daily_sessions.columns = ['date', 'sessions']
         daily_sessions['date'] = pd.to_datetime(daily_sessions['date'])
         
-        fig_timeline = px.scatter(
-            daily_sessions,
-            x='date',
-            y='sessions',
-            size='sessions',
-            title="Workout Activity Over Time",
-            labels={'sessions': 'Sessions per Day', 'date': 'Date'},
-            color='sessions',
-            color_continuous_scale='blues'
-        )
-        fig_timeline.update_layout(height=300)
-        st.plotly_chart(fig_timeline, use_container_width=True)
+        if len(daily_sessions) > 0:
+            fig_timeline = px.scatter(
+                daily_sessions,
+                x='date',
+                y='sessions',
+                size='sessions',
+                title=f"Workout Activity Over Time ({selected_period})",
+                labels={'sessions': 'Sessions per Day', 'date': 'Date'},
+                color='sessions',
+                color_continuous_scale='blues'
+            )
+            fig_timeline.update_layout(height=300)
+            st.plotly_chart(fig_timeline, use_container_width=True)
+        else:
+            st.info(f"No workout data available for {selected_period}")
 
  # === MOVEMENT ANALYSIS ===
         st.subheader("💪 Movement Analysis")
         
-        # Extract all movements and their frequencies
+        # Extract all movements and their frequencies (using filtered data)
         movement_frequency = {}
         movement_cols = [col for col in df.columns if 'movement' in str(col).lower()]
         
         for movement_col in movement_cols:
-            if movement_col in df_clean.columns:
-                movements = df_clean[movement_col].dropna()
+            if movement_col in filtered_df.columns:
+                movements = filtered_df[movement_col].dropna()
                 for movement in movements:
                     if str(movement) != 'nan' and movement and str(movement).strip():
                         movement_frequency[str(movement).strip()] = movement_frequency.get(str(movement).strip(), 0) + 1
@@ -485,22 +536,21 @@ def show_summary_page():
         if movement_frequency:
             top_movements = sorted(movement_frequency.items(), key=lambda x: x[1], reverse=True)[:10]
             
-            # col1, col2 = st.columns(1)
-            
-            # with col1:
-                # Top movements bar chart
+            # Top movements bar chart
             movements, counts = zip(*top_movements)
             fig_movements = px.bar(
                 x=counts,
                 y=movements,
                 orientation='h',
-                title="Most Frequent Movements (Top 10)",
+                title=f"Most Frequent Movements (Top 10) - {selected_period}",
                 labels={'x': 'Times Performed', 'y': 'Movement'},
                 color=counts,
                 color_continuous_scale='plasma'
             )
             fig_movements.update_layout(height=400, showlegend=False)
             st.plotly_chart(fig_movements, use_container_width=True)
+        else:
+            st.info(f"No movement data available for {selected_period}")
         
         #     with col2:
         #         # Recent sessions table (filtered)
@@ -526,7 +576,7 @@ def show_summary_page():
         # === PROGRESS TRACKING PREVIEW ===
         st.subheader("📈 Progress Highlights")
         
-        # Find movements with enough data for progress analysis
+        # Find movements with enough data for progress analysis (using filtered data)
         progress_candidates = []
         for movement, freq in movement_frequency.items():
             if freq >= 3:  # At least 3 sessions
@@ -540,11 +590,11 @@ def show_summary_page():
             )
             
             if selected_movement:
-                # Extract progress data for this movement
+                # Extract progress data for this movement (using filtered data)
                 progress_data = []
                 weight_cols = [col for col in df.columns if 'weight' in str(col).lower()]
                 
-                for idx, row in df_clean.iterrows():
+                for idx, row in filtered_df.iterrows():
                     for i, movement_col in enumerate(movement_cols):
                         if (movement_col in row and 
                             str(row[movement_col]).strip() == selected_movement and 
@@ -572,7 +622,7 @@ def show_summary_page():
                         progress_df,
                         x='date',
                         y='weight',
-                        title=f"{selected_movement} - Weight Progress",
+                        title=f"{selected_movement} - Weight Progress ({selected_period})",
                         labels={'weight': 'Weight (lbs)', 'date': 'Date'},
                         markers=True,
                         color_discrete_sequence=['#FF6B6B']
