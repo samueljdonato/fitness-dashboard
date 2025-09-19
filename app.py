@@ -79,7 +79,7 @@ def main():
         
         st.markdown("---")
         
-        # Page selection - but handle workout pages dynamically
+        # Page selection - handle both main pages and dynamic workout pages
         selected_workout = get_workout_page_navigation()
         
         if selected_workout:
@@ -87,18 +87,66 @@ def main():
             st.write(f"**Current View:**")
             st.write(f"🎯 {selected_workout}")
             
-            # Option to return to workout selection
-            if st.button("← Back to Workout Types"):
+            # Quick workout switcher
+            if df is not None and not df.empty:
+                other_workouts = [w for w in get_unique_workouts(df) if w != selected_workout]
+                if other_workouts:
+                    st.write("**Quick Switch:**")
+                    selected_switch = st.selectbox(
+                        "Switch to workout:",
+                        ["← Select different workout..."] + other_workouts,
+                        key="workout_switcher"
+                    )
+                    
+                    if selected_switch != "← Select different workout...":
+                        st.session_state.selected_workout = selected_switch
+                        st.rerun()
+            
+            st.markdown("---")
+            
+            # Option to return to main navigation
+            if st.button("← Back to Main Menu"):
                 if 'selected_workout' in st.session_state:
                     del st.session_state.selected_workout
                 st.rerun()
         else:
-            # Normal page navigation
-            page = st.selectbox(
-                "Choose a page:",
-                ["📊 Summary", "🎯 Workout Types", "📈 Progress Tracking"],
-                index=0
-            )
+            # Main navigation with workout options
+            page_options = ["📊 Summary", "🎯 Workout Types", "📈 Progress Tracking"]
+            
+            # Add individual workout pages if data is available
+            if df is not None and not df.empty:
+                unique_workouts = get_unique_workouts(df)
+                st.write("**📋 Main Pages:**")
+                page = st.selectbox(
+                    "Choose a main page:",
+                    page_options,
+                    index=0,
+                    key="main_page_selector"
+                )
+                
+                # Add workout-specific navigation
+                if unique_workouts:
+                    st.markdown("---")
+                    st.write("**🎯 Individual Workouts:**")
+                    st.caption(f"Click any workout to view detailed analysis")
+                    
+                    # Sort workouts by number of sessions (most frequent first)
+                    workout_data = [(workout, len(df[df['Workout'] == workout])) for workout in unique_workouts]
+                    workout_data.sort(key=lambda x: x[1], reverse=True)
+                    
+                    # Create buttons for each workout type with session counts
+                    for workout, session_count in workout_data:
+                        button_label = f"📊 {workout} ({session_count} sessions)"
+                        if st.button(button_label, key=f"nav_to_{workout}", use_container_width=True):
+                            st.session_state.selected_workout = workout
+                            st.rerun()
+            else:
+                # Fallback if no data loaded
+                page = st.selectbox(
+                    "Choose a page:",
+                    page_options,
+                    index=0
+                )
         
         st.markdown("---")
         st.markdown("**System Info**")
