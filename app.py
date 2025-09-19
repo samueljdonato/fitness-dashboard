@@ -8,6 +8,7 @@ import pandas as pd
 import plotly.express as px
 from dotenv import load_dotenv
 import os
+import hashlib
 
 # Load environment variables
 load_dotenv()
@@ -39,8 +40,92 @@ except ImportError as e:
     st.info("Make sure utils/__init__.py exists and utils modules are properly structured")
     st.stop()
 
+def check_access():
+    """Password protection for private deployment"""
+    
+    # Get password from environment variable or Streamlit secrets
+    DASHBOARD_PASSWORD = None
+    
+    try:
+        # First try environment variable (for local development)
+        DASHBOARD_PASSWORD = os.getenv('DASHBOARD_PASSWORD')
+        
+        # If not found, try Streamlit secrets (for production)
+        if not DASHBOARD_PASSWORD and hasattr(st, 'secrets'):
+            try:
+                DASHBOARD_PASSWORD = st.secrets.get('DASHBOARD_PASSWORD')
+            except Exception:
+                pass  # Ignore secrets errors in development
+                
+    except Exception as e:
+        st.error(f"❌ Error loading configuration: {e}")
+    
+    if not DASHBOARD_PASSWORD:
+        st.error("❌ Dashboard password not configured")
+        st.info("""
+        **For local development**: Add `DASHBOARD_PASSWORD=YourPassword` to your .env file
+        
+        **For production**: Set `DASHBOARD_PASSWORD` in Streamlit Cloud secrets
+        """)
+        st.stop()
+    
+    # Check if user is already authenticated
+    if st.session_state.get('authenticated', False):
+        return True
+    
+    # Show login form
+    st.title("🔐 Fitness Dashboard Access")
+    st.markdown("---")
+    
+    st.markdown("""
+    ### Welcome to Your Personal Fitness Dashboard 💪
+    
+    **Privacy & Security:**
+    - Your workout data stays in **your Google Sheets**
+    - No data is stored on our servers
+    - Password protects access to your personal fitness analytics
+    
+    **What you'll find inside:**
+    - 📊 Comprehensive workout analytics
+    - 📈 Progress tracking over time  
+    - 🎯 Individual analysis for each workout type
+    - 📱 Mobile-friendly interface
+    """)
+    
+    # Password input
+    password = st.text_input("Enter dashboard password:", type="password", key="dashboard_password")
+    
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col2:
+        if st.button("🚀 Access Dashboard", use_container_width=True):
+            if password:
+                # Hash the input password for comparison
+                password_hash = hashlib.sha256(password.encode()).hexdigest()
+                stored_hash = hashlib.sha256(DASHBOARD_PASSWORD.encode()).hexdigest()
+                
+                if password_hash == stored_hash:
+                    st.session_state.authenticated = True
+                    st.success("✅ Access granted! Loading your dashboard...")
+                    st.rerun()
+                else:
+                    st.error("❌ Incorrect password")
+            else:
+                st.warning("Please enter a password")
+    
+    st.markdown("---")
+    st.caption("🔒 This dashboard is password protected for your privacy and security")
+    
+    # Stop execution until authenticated
+    st.stop()
+
 def main():
     """Main application function"""
+    
+    # Security check - always require password for testing
+    # You can disable this by setting DISABLE_PASSWORD=true in your .env
+    if not os.getenv('DISABLE_PASSWORD', '').lower() == 'true':
+        check_access()
     
     # App header
     st.title("💪 Personal Fitness Dashboard")
