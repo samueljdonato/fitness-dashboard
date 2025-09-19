@@ -15,21 +15,31 @@ from datetime import datetime
 
 
 def get_google_credentials():
-    """Get Google credentials from service account file"""
+    """Get Google credentials from service account file or Streamlit secrets"""
     try:
-        # Path to service account credentials
-        creds_path = "config/service_account.json"
-        
-        if not os.path.exists(creds_path):
-            raise FileNotFoundError(f"Service account file not found: {creds_path}")
-        
         # Define the scope
         scopes = [
             'https://www.googleapis.com/auth/spreadsheets.readonly',
             'https://www.googleapis.com/auth/drive.readonly'
         ]
         
-        # Create credentials
+        # Try Streamlit secrets first (for production)
+        if hasattr(st, 'secrets') and 'GOOGLE_SHEETS_CREDENTIALS' in st.secrets:
+            try:
+                credentials_info = dict(st.secrets['GOOGLE_SHEETS_CREDENTIALS'])
+                credentials = Credentials.from_service_account_info(credentials_info, scopes=scopes)
+                return gspread.authorize(credentials)
+            except Exception as e:
+                print(f"Failed to use Streamlit secrets: {e}")
+                # Continue to try file-based approach
+        
+        # Fallback to service account file (for local development)
+        creds_path = "config/service_account.json"
+        
+        if not os.path.exists(creds_path):
+            raise FileNotFoundError(f"Service account file not found: {creds_path} and no Streamlit secrets configured")
+        
+        # Create credentials from file
         credentials = Credentials.from_service_account_file(creds_path, scopes=scopes)
         
         return gspread.authorize(credentials)
