@@ -13,7 +13,12 @@ import os
 load_dotenv()
 
 # Import utility functions
-from utils.data_loader import load_workout_data, test_connection
+from utils.data_loader import load_workout_data, test_connection, get_unique_workouts
+from pages.workout_page_generator import (
+    show_workout_selection_page, 
+    show_individual_workout_page,
+    get_workout_page_navigation
+)
 
 # Configure Streamlit page
 st.set_page_config(
@@ -38,8 +43,12 @@ def main():
     """Main application function"""
     
     # App header
-    st.title("Fitness Dashboard")
+    st.title("💪 Personal Fitness Dashboard")
     st.markdown("---")
+    
+    # Load data first
+    with st.spinner("Loading workout data..."):
+        df = load_workout_data()
     
     # Sidebar for navigation and controls
     with st.sidebar:
@@ -53,7 +62,6 @@ def main():
                     st.success(message)
                 else:
                     st.error(message)
-                    st.stop()
         
         # Refresh data button
         if st.button("🔄 Refresh Data"):
@@ -61,34 +69,77 @@ def main():
             st.success("Cache cleared! Data will refresh on next load.")
             st.rerun()
         
-        # # Page selection
-        # page = st.selectbox(
-        #     "Choose a page:",
-        #     ["🏠 Home", "📊 Summary", "🎯 Workout Details", "📈 Progress Tracking"],
-        #     index=0
-        # )
-
-        # Page selection
-        page = st.selectbox(
-            "Choose a page:",
-            ["📊 Summary", "🎯 Workout Details", "📈 Progress Tracking"],
-            index=0
-        )
+        # Show data status
+        if df is not None and not df.empty:
+            st.success(f"✅ {len(df)} workout sessions loaded")
+            unique_workouts = get_unique_workouts(df)
+            st.info(f"📊 {len(unique_workouts)} workout types found")
+        else:
+            st.error("❌ No data loaded")
         
         st.markdown("---")
-        # st.markdown("**Debug Info**")
-        # st.caption(f"Sheet: {os.getenv('GOOGLE_SHEET_NAME', 'Not configured')}")
-        # st.caption(f"Refresh: {os.getenv('REFRESH_INTERVAL', '60')}s")
+        
+        # Page selection - but handle workout pages dynamically
+        selected_workout = get_workout_page_navigation()
+        
+        if selected_workout:
+            # We're viewing a specific workout page
+            st.write(f"**Current View:**")
+            st.write(f"🎯 {selected_workout}")
+            
+            # Option to return to workout selection
+            if st.button("← Back to Workout Types"):
+                if 'selected_workout' in st.session_state:
+                    del st.session_state.selected_workout
+                st.rerun()
+        else:
+            # Normal page navigation
+            page = st.selectbox(
+                "Choose a page:",
+                ["📊 Summary", "🎯 Workout Types", "📈 Progress Tracking"],
+                index=0
+            )
+        
+        st.markdown("---")
+        st.markdown("**System Info**")
+        st.caption(f"Sheet: {os.getenv('GOOGLE_SHEET_NAME', 'Not configured')}")
+        st.caption(f"Refresh: {os.getenv('REFRESH_INTERVAL', '60')}s")
+        
+        # Quick stats in sidebar
+        if df is not None and not df.empty:
+            st.markdown("**Quick Stats**")
+            total_sessions = len(df)
+            if 'Date' in df.columns and df['Date'].notna().any():
+                date_range = (df['Date'].max() - df['Date'].min()).days
+                st.caption(f"📅 {date_range} days tracked")
+            st.caption(f"🏋️ {total_sessions} total sessions")
     
-    # Main content area
-    # if page == "🏠 Home":
-    #     show_home_page()
-    if page == "📊 Summary":
-        show_summary_page()
-    elif page == "🎯 Workout Details":
-        show_workout_details_page()
-    elif page == "📈 Progress Tracking":
-        show_progress_page()
+    # Handle page routing
+    if df is None:
+        show_connection_error()
+        return
+    
+    if df.empty:
+        show_no_data_message()
+        return
+    
+    # Check if we're viewing a specific workout
+    selected_workout = get_workout_page_navigation()
+    
+    if selected_workout:
+        # Show individual workout page
+        show_individual_workout_page(df, selected_workout)
+    else:
+        # Show normal pages
+        if 'page' not in locals():
+            page = "📊 Summary"  # Default if no page selected
+        
+        if page == "📊 Summary":
+            show_summary_page()
+        elif page == "🎯 Workout Types":
+            show_workout_selection_page(df)
+        elif page == "📈 Progress Tracking":
+            show_progress_page()
 
 # def show_home_page():
 #     """Display the home/welcome page"""
@@ -438,10 +489,42 @@ def show_summary_page():
             import traceback
             st.code(traceback.format_exc())
 
-def show_workout_details_page():
-    """Display workout detail analysis"""
-    st.header("🎯 Workout Details")
-    st.info("🚧 Workout detail analysis will be implemented in Phase 2!")
+def show_connection_error():
+    """Show connection error page"""
+    st.error("❌ Failed to Connect to Google Sheets")
+    
+    st.markdown("""
+    ### Troubleshooting Steps:
+    
+    1. **Check your Google Sheets connection** using the sidebar button
+    2. **Verify your service account credentials** are properly configured
+    3. **Ensure your sheet is shared** with the service account email
+    4. **Check your environment variables** in the .env file
+    
+    ### Need Help?
+    - Check the README.md for setup instructions
+    - Verify your Google Cloud Console settings
+    - Test with a simple sheet first
+    """)
+
+def show_no_data_message():
+    """Show no data message"""
+    st.warning("📝 No Data Found")
+    
+    st.markdown("""
+    ### Your Google Sheets appears to be empty or has no readable data.
+    
+    **Please check:**
+    - Your sheet contains workout data
+    - Column headers are properly formatted
+    - The 'master_tracker' worksheet exists (or update your .env file)
+    - Data starts from row 2 (headers in row 1)
+    
+    **Expected format:**
+    - `date` column with workout dates
+    - `workout` column with workout type names
+    - `movement_1`, `weight_1`, `rep_1`, `set_1` columns for exercises
+    """)
 
 def show_progress_page():
     """Display progress tracking"""

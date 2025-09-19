@@ -1,38 +1,102 @@
 """
-Enhanced data loading utilities for dynamic workout analysis
+Data Loading Utilities
+Handles connection to Google Sheets and data processing
 """
 
-import pandas as pd
 import streamlit as st
-from typing import List, Dict, Optional, Tuple
-import os
-from datetime import datetime
 import gspread
+import pandas as pd
 from google.oauth2.service_account import Credentials
+import os
+from typing import Tuple, Optional, List, Dict
+from datetime import datetime
 
-@st.cache_data(ttl=int(os.getenv('REFRESH_INTERVAL', '300')))  # Cache for 5 minutes default
+
+
+
+def get_google_credentials():
+    """Get Google credentials from service account file"""
+    try:
+        # Path to service account credentials
+        creds_path = "config/service_account.json"
+        
+        if not os.path.exists(creds_path):
+            raise FileNotFoundError(f"Service account file not found: {creds_path}")
+        
+        # Define the scope
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets.readonly',
+            'https://www.googleapis.com/auth/drive.readonly'
+        ]
+        
+        # Create credentials
+        credentials = Credentials.from_service_account_file(creds_path, scopes=scopes)
+        
+        return gspread.authorize(credentials)
+    
+    except Exception as e:
+        st.error(f"Failed to authenticate with Google Sheets: {str(e)}")
+        return None
+
+def test_connection() -> Tuple[bool, str]:
+    """
+    Test the connection to Google Sheets
+    Returns: (success: bool, message: str)
+    """
+    try:
+        # Test credentials
+        gc = get_google_credentials()
+        if gc is None:
+            return False, "Failed to authenticate with Google"
+        
+        # Test sheet access
+        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Your Workout Log')
+        try:
+            spreadsheet = gc.open(sheet_name)
+            worksheet = spreadsheet.sheet1  # Default to first sheet
+            
+            # Try to read just the header row
+            header_row = worksheet.row_values(1)
+            
+            if not header_row:
+                return False, f"Sheet '{sheet_name}' appears to be empty"
+            
+            return True, f"✅ Successfully connected to '{sheet_name}' with {len(header_row)} columns"
+            
+        except gspread.SpreadsheetNotFound:
+            return False, f"❌ Sheet '{sheet_name}' not found or not shared with service account"
+        except Exception as e:
+            return False, f"❌ Error accessing sheet: {str(e)}"
+    
+    except Exception as e:
+        return False, f"❌ Connection test failed: {str(e)}"
+
+@st.cache_data(ttl=int(os.getenv('REFRESH_INTERVAL', 60)))
 def load_workout_data() -> Optional[pd.DataFrame]:
     """
     Load workout data from Google Sheets with caching
-    Returns processed DataFrame or None if loading fails
+    Returns: DataFrame or None if error
     """
+
+    
     try:
-        # Get credentials and connect to Google Sheets
-        success, client_or_message = get_google_sheets_client()
-        
-        if not success:
-            st.error(f"Failed to connect to Google Sheets: {client_or_message}")
+        # Get credentials
+        gc = get_google_credentials()
+        if gc is None:
             return None
-            
-        client = client_or_message
         
+        # # Open the spreadsheet
+        # sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Your Workout Log')
+        # worksheet_name = os.getenv('GOOGLE_SHEET_WORKSHEET', 'Sheet1')
         # Open the spreadsheet
         sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Fitness Tracker')
         worksheet_name = os.getenv('GOOGLE_SHEET_WORKSHEET', 'master_tracker')
-        
-        spreadsheet = client.open(sheet_name)
+
+        spreadsheet = gc.open(sheet_name)
         worksheet = spreadsheet.worksheet(worksheet_name)
-        
+
+        data = worksheet.get_all_records()
+
         # Get all data
         data = worksheet.get_all_records()
         
@@ -42,85 +106,112 @@ def load_workout_data() -> Optional[pd.DataFrame]:
         df = pd.DataFrame(data)
         
         # Process the data
-        df = process_raw_data(df)
+        # df = process_raw_data(df)
+        df = clean_workout_data(df)
         
-        return df
-        
+        return df        
+   
     except Exception as e:
         st.error(f"Error loading workout data: {str(e)}")
-        return None
+        return None                     
+        
+    #     try:
+    #         spreadsheet = gc.open(sheet_name)
+            
+    #         # Try to access specific worksheet, fall back to first sheet
+    #         try:
+    #             if worksheet_name == 'Sheet1' or worksheet_name == '':
+    #                 worksheet = spreadsheet.sheet1
+    #             else:
+    #                 worksheet = spreadsheet.worksheet(worksheet_name)
+    #         except gspread.WorksheetNotFound:
+    #             st.warning(f"Worksheet '{worksheet_name}' not found, using first sheet")
+    #             worksheet = spreadsheet.sheet1
+            
+    #     except gspread.SpreadsheetNotFound:
+    #         st.error(f"Spreadsheet '{sheet_name}' not found or not accessible")
+    #         return None
+        
+    #     # Get all data
+    #     records = worksheet.get_all_records()
+        
+    #     if not records:
+    #         st.warning("No data found in the spreadsheet")
+    #         return pd.DataFrame()  # Return empty DataFrame
+        
+    #     # Convert to DataFrame
+    #     df = pd.DataFrame(records)
+        
+    #     if df.empty:
+    #         st.warning("No data found in the spreadsheet")
+    #         return pd.DataFrame()
+        
+    #     # Basic data cleaning
+    #     df = clean_workout_data(df)
+        
+    #     return df
+    
+    # except Exception as e:
+    #     st.error(f"Error loading data: {str(e)}")
+    #     return None
 
-def get_google_sheets_client() -> Tuple[bool, any]:
+def clean_workout_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Get authenticated Google Sheets client
-    Returns (success, client_or_error_message)
-    """
-    try:
-        # Define the scope
-        scopes = [
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        
-        # Get credentials from Streamlit secrets or environment
-        if 'GOOGLE_SHEETS_CREDENTIALS' in st.secrets:
-            # Using Streamlit secrets (recommended for deployment)
-            creds_dict = st.secrets['GOOGLE_SHEETS_CREDENTIALS']
-            credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        else:
-            # Using service account file (for local development)
-            creds_file = os.getenv('GOOGLE_SHEETS_CREDENTIALS_FILE', 'credentials.json')
-            if os.path.exists(creds_file):
-                credentials = Credentials.from_service_account_file(creds_file, scopes=scopes)
-            else:
-                return False, "No credentials found. Please configure GOOGLE_SHEETS_CREDENTIALS or credentials file."
-        
-        # Create the client
-        client = gspread.authorize(credentials)
-        return True, client
-        
-    except Exception as e:
-        return False, str(e)
-
-def process_raw_data(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Process raw data from Google Sheets into standardized format
+    Clean and standardize workout data
     """
     if df.empty:
         return df
     
-    # Standardize column names (handle case variations)
-    column_mapping = {}
-    for col in df.columns:
-        col_lower = col.lower().strip()
-        if 'date' in col_lower:
-            column_mapping[col] = 'Date'
-        elif 'workout' in col_lower and 'type' not in col_lower:
-            column_mapping[col] = 'Workout'
-        elif 'start' in col_lower and 'time' in col_lower:
-            column_mapping[col] = 'Start_Time'
-        elif 'end' in col_lower and 'time' in col_lower:
-            column_mapping[col] = 'End_Time'
+    # Make a copy to avoid modifying the original
+    df = df.copy()
     
-    df = df.rename(columns=column_mapping)
-    
-    # Convert date columns
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    
-    # Convert time columns
-    for time_col in ['Start_Time', 'End_Time']:
-        if time_col in df.columns:
-            df[time_col] = pd.to_datetime(df[time_col], format='%H:%M', errors='coerce')
-    
-    # Clean up empty rows
+    # Remove completely empty rows
     df = df.dropna(how='all')
     
-    # Remove rows where essential columns are empty
-    if 'Workout' in df.columns:
-        df = df[df['Workout'].notna() & (df['Workout'] != '')]
+    # Common column name standardizations (adapt based on your sheet structure)
+    column_mapping = {
+        'date': 'Date',
+        'Date': 'Date',
+        'workout': 'Workout',
+        'Workout': 'Workout',
+        'exercise': 'Movement',
+        'movement': 'Movement',
+        'Movement': 'Movement',
+        'Exercise': 'Movement',
+        'reps': 'Reps',
+        'Reps': 'Reps',
+        'sets': 'Sets',
+        'Sets': 'Sets',
+        'weight': 'Weight',
+        'Weight': 'Weight'
+    }
+    
+    # Rename columns that exist
+    for old_name, new_name in column_mapping.items():
+        if old_name in df.columns:
+            df = df.rename(columns={old_name: new_name})
+    
+    # Convert data types where possible
+    if 'Date' in df.columns:
+        try:
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        except:
+            pass  # Keep as string if conversion fails
+    
+    # Convert numeric columns
+    numeric_columns = ['Reps', 'Sets', 'Weight']
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Remove rows where all key columns are NaN
+    key_columns = ['Workout', 'Movement']
+    existing_key_cols = [col for col in key_columns if col in df.columns]
+    if existing_key_cols:
+        df = df.dropna(subset=existing_key_cols, how='all')
     
     return df
+
 
 def get_unique_workouts(df: pd.DataFrame) -> List[str]:
     """
@@ -218,6 +309,8 @@ def extract_movements_from_workout(df: pd.DataFrame) -> pd.DataFrame:
     
     return movements_df
 
+
+
 def get_data_summary(df: pd.DataFrame) -> Dict:
     """
     Get summary statistics about the dataset
@@ -255,40 +348,6 @@ def get_data_summary(df: pd.DataFrame) -> Dict:
     
     return summary
 
-def test_connection() -> Tuple[bool, str]:
-    """
-    Test the Google Sheets connection
-    Returns (success, message)
-    """
-    try:
-        success, client_or_message = get_google_sheets_client()
-        
-        if not success:
-            return False, f"Authentication failed: {client_or_message}"
-        
-        client = client_or_message
-        
-        # Try to open the spreadsheet
-        sheet_name = os.getenv('GOOGLE_SHEET_NAME', 'Fitness Tracker')
-        spreadsheet = client.open(sheet_name)
-        
-        # Try to access the worksheet
-        worksheet_name = os.getenv('GOOGLE_SHEET_WORKSHEET', 'master_tracker')
-        worksheet = spreadsheet.worksheet(worksheet_name)
-        
-        # Get a small sample of data
-        sample_data = worksheet.get('A1:E2')
-        
-        return True, f"✅ Successfully connected to '{sheet_name}' sheet, '{worksheet_name}' worksheet. Found {len(sample_data)} rows in sample."
-        
-    except gspread.SpreadsheetNotFound:
-        return False, f"❌ Spreadsheet '{os.getenv('GOOGLE_SHEET_NAME')}' not found. Check the sheet name and sharing permissions."
-    
-    except gspread.WorksheetNotFound:
-        return False, f"❌ Worksheet '{os.getenv('GOOGLE_SHEET_WORKSHEET')}' not found in the spreadsheet."
-    
-    except Exception as e:
-        return False, f"❌ Connection test failed: {str(e)}"
 
 def validate_data_structure(df: pd.DataFrame) -> Tuple[bool, List[str]]:
     """
@@ -367,3 +426,37 @@ def calculate_workout_metrics(movements_df: pd.DataFrame) -> Dict:
     }
     
     return metrics
+
+
+# def get_data_summary(df: pd.DataFrame) -> dict:
+
+#     """
+#     Get basic summary statistics about the workout data
+#     """
+#     if df.empty:
+#         return {
+#             'total_records': 0,
+#             'unique_workouts': 0,
+#             'unique_movements': 0,
+#             'date_range': 'No data',
+#             'columns': []
+#         }
+    
+#     summary = {
+#         'total_records': len(df),
+#         'unique_workouts': df['Workout'].nunique() if 'Workout' in df.columns else 0,
+#         'unique_movements': df['Movement'].nunique() if 'Movement' in df.columns else 0,
+#         'columns': list(df.columns)
+#     }
+    
+#     # Date range
+#     if 'Date' in df.columns and df['Date'].notna().any():
+#         min_date = df['Date'].min()
+#         max_date = df['Date'].max()
+#         summary['date_range'] = f"{min_date} to {max_date}"
+#     else:
+#         summary['date_range'] = 'No date information'
+    
+#     return summary
+
+
